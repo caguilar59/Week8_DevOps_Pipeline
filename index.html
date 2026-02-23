@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assignment - Building and Showcasing a Full DevOps Pipeline</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: black;
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .code-block {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            position: relative;
+        }
+        .copy-button {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+    <script>
+        function copyToClipboard(id) {
+            var copyText = document.getElementById(id);
+            navigator.clipboard.writeText(copyText.innerText).then(function() {
+                alert("Copied to clipboard!");
+            }, function(err) {
+                alert("Failed to copy: " + err);
+            });
+        }
+    </script>
+</head>
+<body>
+
+    <h1>Assignment - Building and Showcasing a Full DevOps Pipeline</h1>
+
+    <h2>Introduction</h2>
+    <p>In this assignment, you will implement a **complete CI/CD pipeline** from **code commit to deployment**, integrating automated testing, security scanning, and monitoring.</p>
+
+    <h2>Step 1: Set Up Your CI/CD Environment</h2>
+    <p>Use **GitHub Actions** to automate your CI/CD pipeline.</p>
+    <p>Create a new GitHub repository and set up **secrets** under <b>Settings → Secrets</b>:</p>
+    <ul>
+        <li><b>SNYK_TOKEN</b> → API key from <a href="https://snyk.io" target="_blank">Snyk</a></li>
+        <li><b>DOCKER_USERNAME</b> → Your Docker Hub username</li>
+        <li><b>DOCKER_PASSWORD</b> → Your Docker Hub password</li>
+        <li><b>EC2_SSH_KEY</b> → Your AWS EC2 private key (in PEM format)</li>
+        <li><b>EC2_PUBLIC_IP</b> → Your AWS EC2 instance public IP</li>
+    </ul>
+
+    <h2>Step 2: Create Your GitHub Actions CI/CD Pipeline</h2>
+    <p>Create a file named <b>.github/workflows/devops-pipeline.yml</b> inside your repository:</p>
+    <div class="code-block" id="code1">
+        name: Full DevOps Pipeline
+
+        on:
+          push:
+            branches:
+              - main
+          pull_request:
+
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+              - name: Checkout Code
+                uses: actions/checkout@v2
+
+              - name: Set up Node.js
+                uses: actions/setup-node@v16
+                with:
+                  node-version: '16'
+
+              - name: Install Dependencies
+                run: npm install
+
+          test:
+            runs-on: ubuntu-latest
+            needs: build
+            steps:
+              - name: Run Tests
+                run: npm test
+
+          security_scan:
+            runs-on: ubuntu-latest
+            needs: test
+            steps:
+              - name: Install Snyk
+                run: npm install -g snyk
+
+              - name: Authenticate Snyk
+                env:
+                  SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+                run: snyk auth $SNYK_TOKEN
+
+              - name: Run Security Scan
+                run: snyk test
+
+          docker_build:
+            runs-on: ubuntu-latest
+            needs: security_scan
+            steps:
+              - name: Log in to Docker Hub
+                run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+              - name: Build Docker Image
+                run: docker build -t my-app .
+
+              - name: Tag Docker Image
+                run: docker tag my-app:latest ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+
+              - name: Push Docker Image
+                run: docker push ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+
+          deploy:
+            runs-on: ubuntu-latest
+            needs: docker_build
+            steps:
+              - name: Deploy to AWS EC2
+                env:
+                  PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+                  HOST: ${{ secrets.EC2_PUBLIC_IP }}
+                  USER: "ubuntu"
+                run: |
+                  echo "$PRIVATE_KEY" > private_key.pem
+                  chmod 600 private_key.pem
+                  ssh -o StrictHostKeyChecking=no -i private_key.pem $USER@$HOST << 'EOF'
+                    docker pull ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+                    docker stop my-app || true
+                    docker rm my-app || true
+                    docker run -d -p 5000:5000 --name my-app ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+                  EOF
+        <button class="copy-button" onclick="copyToClipboard('code1')">Copy</button>
+    </div>
+
+    <h2>Step 3: Submit Your Work</h2>
+    <p>Submit the following:</p>
+    <ul>
+        <li>A **5-8 slide PowerPoint presentation** explaining your pipeline</li>
+        <li>A **short demo video** showcasing the working CI/CD pipeline</li>
+        <li>Your **GitHub repository link**</li>
+    </ul>
+
+</body>
+</html>
