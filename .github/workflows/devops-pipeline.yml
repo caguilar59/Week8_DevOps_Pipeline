@@ -7,60 +7,46 @@ on:
   pull_request:
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-
       - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v18
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Install Dependencies
         run: npm install
-
 
   test:
     runs-on: ubuntu-latest
     needs: build
     steps:
-
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
       - name: Run Tests
         run: npm test
-
 
   security_scan:
     runs-on: ubuntu-latest
     needs: test
     steps:
-
       - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Install Snyk
         run: npm install -g snyk
 
-      - name: Authenticate Snyk
+      - name: Run Security Scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk auth $SNYK_TOKEN
-
-      - name: Run Security Scan
-        run: snyk test || true   # <-- prevents exit code 2 from failing pipeline
-
+        run: snyk test || true
 
   docker_build:
     runs-on: ubuntu-latest
     needs: security_scan
     steps:
-
       - name: Checkout Code
         uses: actions/checkout@v3
 
@@ -76,32 +62,26 @@ jobs:
       - name: Push Docker Image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/my-app:latest
 
-
   deploy:
     runs-on: ubuntu-latest
     needs: docker_build
     steps:
-
       - name: Deploy to AWS EC2
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           HOST: ${{ secrets.EC2_PUBLIC_IP }}
-          USER: ubuntu
-
+          USER: "ubuntu"
         run: |
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $USER@$HOST << 'EOF'
+            # Stop existing container if it exists
+            sudo docker stop my-app || true
+            sudo docker rm my-app || true
 
-          ssh -o StrictHostKeyChecking=no -i private_key.pem $USER@$HOST << EOF
+            # Pull latest image from Docker Hub
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/my-app:latest
 
-            docker pull ${{ secrets.DOCKER_USERNAME }}/my-app:latest
-
-            docker stop my-app || true
-
-            docker rm my-app || true
-
-            docker run -d -p 5000:5000 \
-            --name my-app \
-            ${{ secrets.DOCKER_USERNAME }}/my-app:latest
-
+            # Run the container
+            sudo docker run -d -p 3000:3000 --name my-app ${{ secrets.DOCKER_USERNAME }}/my-app:latest
           EOF
